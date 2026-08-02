@@ -4,9 +4,9 @@ A lightweight Bash script for auditing network security on macOS. Designed for u
 
 ## Why I Created the Tool
 
-As I learn some networking basics, I have begun to learn the ease with which personal data is captured through network analysis and/or website scraping. Understanding this at a surface level let me do research into aggressive HTTPS, DNS resolvers, DoH and VPN usage, and general private network protections. Beginning to dive into those services/tools then allowed me to dive into Wireshark to see how they actually work on the live network, thus leading me to use `tcpdump` in the Bash terminal on macOS. Once I brewed `tcpdump`, I then got familiar with the commands and services provided. That then gave me the idea to craft a program that would test the authenticity of my DNS, DoH, and VPN services with one click, rather than checking whether everything was active in its respective way. All of this has culminated in my first cyber/networking tool. This is a simple Bash script that I have saved under an alias to run on my home Wi-Fi (switching between Ethernet and wireless toggling), or more realistically, when I connect to public Wi-Fi on my laptop. In its current state, it is highly customizable, and I will likely improve upon it as I learn more.
+As I learn some networking basics, I have begun to learn the ease with which personal data is captured through network analysis and/or website scraping. Understanding this at a surface level let me do research into aggressive HTTPS, DNS resolvers, DoH and VPN usage, and general private network protections. Beginning to dive into those services/tools then allowed me to dive into Wireshark to see how they actually work on the live network, thus leading me to use `tcpdump` in the Bash terminal on macOS. Once I brewed `tcpdump`, I then got familiar with the commands and services provided. That then gave me the idea to craft a program that would test the authenticity of my DNS, DoH, and VPN services with one click, rather than checking whether everything was active in its respective way. That then made me realize that I have never coded in Bash and I would need to get over that hurdle first. I found W3Schools' 'Bash Tutorial' (https://www.w3schools.com/bash/) and started applying those concepts alongside other online resources. All of this has culminated in crafting my first cyber/networking tool. This project became a simple Bash script that I have saved under an alias to run on my home Wi-Fi (switching between Ethernet and wireless toggling), or more realistically, when I connect to public Wi-Fi on my laptop. In its current state, it is highly customizable, and I will likely improve upon it as I learn more.
 
-This being said, let me mention a few use cases, how it works, how to use it, dependencies, and what I learned while making it!
+With all of this in mind, let me mention a few use cases, how it works, how to use it, dependencies, and what I learned while making it!
 
 ## Use Cases
  
@@ -79,3 +79,10 @@ This was my first Bash project not on Linux, so I wanted to note the primary thi
 - **Auto-detecting the active interface** with `route get default | awk` is more reliable than hardcoding `en0`, especially on machines that switch between WiFi and Ethernet or use VPN virtual interfaces.
 
 - **ShellCheck** (`brew install shellcheck`) is worth running on any Bash script before calling it done. It caught the redirect issue above, flagged `read` calls missing `-r` that would mangle backslashes, and surfaced two unused variable warnings that revealed dead code paths in the original draft.
+
+## References
+
+- Opensource.com. *An Introduction to Programming with Bash*. Red Hat, 2021, https://opensource.com/downloads/bash-programming-guide
+- W3Schools. "Bash Tutorial." *W3Schools*, Refsnes Data, 2026, https://www.w3schools.com/bash/
+
+
