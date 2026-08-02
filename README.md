@@ -1,6 +1,20 @@
-# Network Auditing Tool
+# Network Security Auditing Tool
 
 A lightweight Bash script for auditing network security on macOS. Designed for use with a VPN and DNS-over-HTTPS setup, it passively captures and analyzes live traffic to check for common privacy leaks.
+
+## Why I Created the Tool
+
+As I learn some networking basics, I have begun to learn the ease with which personal data is captured through network analysis and/or website scraping. Understanding this at a surface level let me do research into aggressive HTTPS, DNS resolvers, DoH and VPN usage, and general private network protections. Beginning to dive into those services/tools then allowed me to dive into Wireshark to see how they actually work on the live network, thus leading me to use `tcpdump` in the Bash terminal on macOS. Once I brewed `tcpdump`, I then got familiar with the commands and services provided. That then gave me the idea to craft a program that would test the authenticity of my DNS, DoH, and VPN services with one click, rather than checking whether everything was active in its respective way. All of this has culminated in my first cyber/networking tool. This is a simple Bash script that I have saved under an alias to run on my home Wi-Fi (switching between Ethernet and wireless toggling), or more realistically, when I connect to public Wi-Fi on my laptop. In its current state, it is highly customizable, and I will likely improve upon it as I learn more.
+
+This being said, let me mention a few use cases, how it works, how to use it, dependencies, and what I learned while making it!
+
+## Use Cases
+ 
+- Verifying VPN is tunneling all traffic before and after connecting
+- Confirming DNS-over-HTTPS is active and not silently falling back to plaintext
+- Spot-checking after a system update, VPN config change, or network switch
+- Identifying which process is generating traffic on a suspicious port
+- Understanding what the inside vs. outside of a WireGuard tunnel looks like at the packet level
 
 ## How It Works
  
@@ -20,13 +34,6 @@ Each test produces a `[ PASS ]`, `[ FAIL ]`, `[ WARN ]`, or `[ INFO ]` verdict. 
 | 6 | Process Hunt | Tunnel | Takes a port number, runs `lsof` and `netstat` to identify the owning process, then captures live tunnel traffic on that port. |
 | 7 | Run All | Both | Runs tests 1–5 sequentially (configurable duration, default 10s each) and prints a full summary. |
 | 8 | Install Aliases | — | Writes `dns-leak`, `doh-check`, `vpn-integrity`, `wg-view`, `tunnel-view`, and `port-hunt` shortcuts to `~/.zshrc`. |
- 
-## Dependencies
- 
-- macOS (Apple Silicon tested)
-- `tcpdump`: built-in, requires `sudo`
-- `lsof`, `netstat`, `ifconfig`, `route`, `awk`: all standard macOS CLI tools
-- WireGuard VPN (NordVPN NordLynx or equivalent)
  
 ## Usage
  
@@ -52,14 +59,12 @@ WIREGUARD_PORT="51820"     # change for non-NordLynx WireGuard setups
 DOH_SERVER="1.1.1.1"       # swap for your DoH provider
 SEQUENTIAL_DURATION=10     # seconds per test in Run All
 ```
+## My Dependencies
  
-## Use Cases
- 
-- Verifying VPN is tunneling all traffic before and after connecting
-- Confirming DNS-over-HTTPS is active and not silently falling back to plaintext
-- Spot-checking after a system update, VPN config change, or network switch
-- Identifying which process is generating traffic on a suspicious port
-- Understanding what the inside vs. outside of a WireGuard tunnel looks like at the packet level
+- macOS (Apple Silicon; what I use)
+- `tcpdump`: built-in, though it does require `sudo`
+- `lsof`, `netstat`, `ifconfig`, `route`, `awk`: standard macOS CLI tools
+- WireGuard VPN (NordVPN NordLynx or OS equivalent)
 
 ## What I Learned Building This
 
