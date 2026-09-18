@@ -5,13 +5,15 @@
 #
 # Tests:
 #   1) DNS Leak Check    -- plaintext UDP 53 on physical interface
+#  1b) IPv6 DNS Check    -- plaintext IPv6 UDP 53 on physical interface
 #   2) DoH Verification  -- DNS routing through encrypted DoH
-#   3) VPN Integrity     -- traffic bypassing the WireGuard tunnel
+#   3) VPN Integrity     -- traffic bypassing the WireGuard tunnel (noise filtered)
 #   4) Encrypted View    -- WireGuard envelopes on physical interface
 #   5) Decrypted View    -- plaintext traffic inside tunnel
 #   6) Process Hunt      -- process owning a suspicious port
-#   7) Run All           -- tests 1-5 sequentially + summary
-#   8) Install Aliases   -- shortcuts to ~/.zshrc
+#   7) Public IP Check   -- query external edge via curl
+#   8) Run All           -- tests sequentially + summary
+#   9) Install Aliases   -- shortcuts to ~/.zshrc
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -34,7 +36,6 @@ VERDICT_DNS="" VERDICT_DOH="" VERDICT_VPN="" VERDICT_ENC="" VERDICT_DEC=""
 export VERDICT_DNS VERDICT_DOH VERDICT_VPN VERDICT_ENC VERDICT_DEC
 
 
-
 get_physical_interface() {
     if [ "$AUTO_DETECT_PHYSICAL" = true ]; then
         IFACE=$(route get default 2>/dev/null | grep interface | awk '{print $2}')
@@ -48,16 +49,13 @@ get_physical_interface() {
     fi
 }
 
+
 get_tunnel_interface() {
     if [ "$AUTO_DETECT_TUNNEL" = true ]; then
-        # WireGuard tunnels show 'inet X --> X' (point-to-point) in ifconfig.
-        # Match that pattern specifically to avoid picking up other utun interfaces
-        # that may have RFC 1918 addresses for unrelated reasons.
         TUNNEL=$(ifconfig 2>/dev/null | awk '
             /^utun/ { iface = substr($1, 1, length($1)-1) }
             /inet .* -->/ && iface { print iface; iface="" }
         ' | head -1)
-        # Fallback: any utun with a private inet address (non point-to-point)
         if [ -z "$TUNNEL" ]; then
             TUNNEL=$(ifconfig 2>/dev/null | awk '
                 /^utun/ { iface = substr($1, 1, length($1)-1) }
@@ -72,7 +70,6 @@ get_tunnel_interface() {
     fi
 }
 
-# -----------------------------------------------------------------------------
 
 print_header() {
     PHYS=$(get_physical_interface)
@@ -88,26 +85,30 @@ print_header() {
     echo ""
 }
 
+
 print_menu() {
     echo -e "${BOLD}${YELLOW}Select a test:${NC}"
     echo ""
     echo -e "  ${CYAN}Encrypted ($PHYS)${NC}"
-    echo "  1) DNS Leak Check    -- UDP 53 plaintext should be zero"
+    echo "  1) DNS Leak Check    -- IPv4 UDP 53 plaintext should be zero"
+    echo " 1b) IPv6 DNS Check    -- IPv6 UDP 53 plaintext should be zero"
     echo "  2) DoH Verification  -- confirm DNS routing to $DOH_SERVER"
-    echo "  3) VPN Integrity     -- detect traffic bypassing WireGuard"
+    echo "  3) VPN Integrity     -- detect traffic bypassing WireGuard (mDNS filtered)"
     echo "  4) Encrypted View    -- raw WireGuard envelopes on $PHYS"
     echo ""
-    echo -e "  ${CYAN}Decrypted ($TUNNEL)${NC}"
+    echo -e "  ${CYAN}Decrypted ($TUNNEL) & External${NC}"
     echo "  5) Decrypted View    -- plaintext traffic inside tunnel"
     echo "  6) Process Hunt      -- identify process owning a port"
+    echo "  7) Public IP Check   -- query external edge via curl"
     echo ""
     echo -e "  ${CYAN}Bulk${NC}"
-    echo "  7) Run All           -- tests 1-5, ${SEQUENTIAL_DURATION}s each + summary"
-    echo "  8) Install Aliases   -- write shortcuts to ~/.zshrc"
+    echo "  8) Run All           -- core tests sequentially + summary"
+    echo "  9) Install Aliases   -- write shortcuts to ~/.zshrc"
     echo "  q) Quit"
     echo ""
     read -rp "Choice: " choice
 }
+
 
 check_sudo() {
     if ! sudo -n true 2>/dev/null; then
@@ -116,12 +117,6 @@ check_sudo() {
     fi
 }
 
-# ----------------------------------------------------------------------------
-# Runs tcpdump for exactly DURATION seconds on macOS (no GNU timeout).
-# Writes output to a temp file rather than capturing in $() to avoid
-# sudo credential loss in subshells. Caller reads the file after.
-#
-# Usage: timed_tcpdump <outfile> <duration> <tcpdump args...>
 
 timed_tcpdump() {
     local OUTFILE="$1"
@@ -130,7 +125,6 @@ timed_tcpdump() {
     local PCAPFILE
     PCAPFILE=$(mktemp -t na_pcap)
 
-    # Run tcpdump directly (not in subshell) -- sudo context preserved
     sudo tcpdump "$@" -w "$PCAPFILE" 2>>"$OUTFILE" &
     local TCPDUMP_PID=$!
 
@@ -138,7 +132,6 @@ timed_tcpdump() {
     sudo kill -SIGINT "$TCPDUMP_PID" 2>/dev/null
     wait "$TCPDUMP_PID" 2>/dev/null
 
-    # Re-read pcap into outfile in human-readable form
     if [ -f "$PCAPFILE" ]; then
         sudo tcpdump -r "$PCAPFILE" -n -q 2>/dev/null | tee -a "$OUTFILE" >/dev/null
     fi
@@ -146,11 +139,11 @@ timed_tcpdump() {
     rm -f "$PCAPFILE"
 }
 
-# --------------------------------------------------------------------------------------------------------------------------------------------------------
 
 get_packet_count() {
     echo "$1" | grep "packets captured" | awk '{print $1}'
 }
+
 
 print_verdict() {
     local STATUS="$1" HEADLINE="$2" NOTE="$3"
@@ -167,6 +160,7 @@ print_verdict() {
     echo ""
 }
 
+
 evaluate_dns_leak() {
     local COUNT
     COUNT=$(get_packet_count "$1")
@@ -180,6 +174,7 @@ evaluate_dns_leak() {
             "UDP 53 visible on $PHYS -- check VPN DNS leak protection."
     fi
 }
+
 
 evaluate_doh() {
     local COUNT HTTPS_COUNT
@@ -200,6 +195,7 @@ evaluate_doh() {
     fi
 }
 
+
 evaluate_vpn_integrity() {
     local COUNT UNEXPECTED
     COUNT=$(get_packet_count "$1")
@@ -216,10 +212,11 @@ evaluate_vpn_integrity() {
             "Non-WireGuard traffic on $PHYS -- possible VPN leak. Use Test 6."
     else
         VERDICT_VPN="PASS"
-        print_verdict "PASS" "Only LAN broadcast traffic outside tunnel." \
+        print_verdict "PASS" "Only LAN broadcast/discovery traffic outside tunnel." \
             "DHCP/mDNS/SSDP only -- no leak detected."
     fi
 }
+
 
 evaluate_encrypted_view() {
     local COUNT
@@ -234,6 +231,7 @@ evaluate_encrypted_view() {
             "Tunnel confirmed on $PHYS:$WIREGUARD_PORT."
     fi
 }
+
 
 evaluate_decrypted_view() {
     local COUNT HTTPS_COUNT
@@ -250,7 +248,6 @@ evaluate_decrypted_view() {
     fi
 }
 
-# ----------------------------------------------------------------------------
 
 run_dns_leak() {
     local IFACE DURATION OUTFILE RESULT
@@ -258,7 +255,7 @@ run_dns_leak() {
     DURATION="${1:-$SEQUENTIAL_DURATION}"
     OUTFILE=$(mktemp -t na_txt)
     echo ""
-    echo -e "${CYAN}${BOLD}[TEST 1] DNS Leak Check${NC}"
+    echo -e "${CYAN}${BOLD}[TEST 1] IPv4 DNS Leak Check${NC}"
     echo -e "  Interface : ${GREEN}$IFACE${NC} (physical)"
     echo -e "  Filter    : udp port 53"
     echo -e "  Expect    : zero packets -- all DNS should be encrypted"
@@ -268,6 +265,30 @@ run_dns_leak() {
     echo "$RESULT"
     evaluate_dns_leak "$RESULT"
 }
+
+
+run_ipv6_dns_leak() {
+    local IFACE DURATION OUTFILE RESULT COUNT
+    IFACE=$(get_physical_interface)
+    DURATION="${1:-$SEQUENTIAL_DURATION}"
+    OUTFILE=$(mktemp -t na_txt)
+    echo ""
+    echo -e "${CYAN}${BOLD}[TEST 1b] IPv6 DNS Leak Check${NC}"
+    echo -e "  Interface : ${GREEN}$IFACE${NC} (physical)"
+    echo -e "  Filter    : ip6 and udp port 53"
+    echo -e "  Expect    : zero packets -- IPv6 DNS should be tunneled"
+    echo ""
+    timed_tcpdump "$OUTFILE" "$DURATION" -i "$IFACE" -n ip6 and udp port 53
+    RESULT=$(cat "$OUTFILE"); rm -f "$OUTFILE"
+    echo "$RESULT"
+    COUNT=$(get_packet_count "$RESULT")
+    if [ "$COUNT" = "0" ] || [ -z "$COUNT" ]; then
+        print_verdict "PASS" "No plaintext IPv6 DNS detected." "IPv6 UDP 53 is clean on $PHYS."
+    else
+        print_verdict "FAIL" "Plaintext IPv6 DNS detected ($COUNT packets)." "Check IPv6 leak protections."
+    fi
+}
+
 
 run_doh_check() {
     local IFACE DURATION OUTFILE RESULT
@@ -286,6 +307,7 @@ run_doh_check() {
     evaluate_doh "$RESULT"
 }
 
+
 run_vpn_integrity() {
     local IFACE DURATION OUTFILE RESULT
     IFACE=$(get_physical_interface)
@@ -294,14 +316,15 @@ run_vpn_integrity() {
     echo ""
     echo -e "${CYAN}${BOLD}[TEST 3] VPN Integrity${NC}"
     echo -e "  Interface : ${GREEN}$IFACE${NC} (physical)"
-    echo -e "  Filter    : not udp port $WIREGUARD_PORT"
-    echo -e "  Expect    : near silence -- all traffic inside WireGuard"
+    echo -e "  Filter    : not udp port $WIREGUARD_PORT (excluding mDNS/SSDP/broadcast)"
+    echo -e "  Expect    : near silence -- all internet traffic inside WireGuard"
     echo ""
-    timed_tcpdump "$OUTFILE" "$DURATION" -i "$IFACE" -n not udp port "$WIREGUARD_PORT"
+    timed_tcpdump "$OUTFILE" "$DURATION" -i "$IFACE" -n "not udp port $WIREGUARD_PORT and not port 5353 and not port 1900 and not broadcast"
     RESULT=$(cat "$OUTFILE"); rm -f "$OUTFILE"
     echo "$RESULT"
     evaluate_vpn_integrity "$RESULT"
 }
+
 
 run_encrypted_view() {
     local IFACE DURATION OUTFILE RESULT
@@ -320,6 +343,7 @@ run_encrypted_view() {
     evaluate_encrypted_view "$RESULT"
 }
 
+
 run_decrypted_view() {
     local TUNNEL DURATION OUTFILE RESULT
     TUNNEL=$(get_tunnel_interface)
@@ -336,6 +360,7 @@ run_decrypted_view() {
     echo "$RESULT"
     evaluate_decrypted_view "$RESULT"
 }
+
 
 run_process_hunt() {
     local TUNNEL OUTFILE LSOF_RESULT NETSTAT_RESULT TRAFFIC PROCESS PID
@@ -373,16 +398,27 @@ run_process_hunt() {
         PROCESS=$(echo "$LSOF_RESULT" | awk 'NR==2{print $1}')
         PID=$(echo "$LSOF_RESULT" | awk 'NR==2{print $2}')
         echo -e "  ${GREEN}${BOLD}[ RESULT ]${NC}  $PROCESS (PID $PID) owns port $PORT"
-        echo -e "             Investigate: ps aux | grep $PID"
     else
         echo -e "  ${YELLOW}${BOLD}[ RESULT ]${NC}  No process bound to port $PORT."
-        echo -e "             Port may be transient -- retry while triggering traffic."
     fi
     echo -e "${BOLD}------------------------------------------------${NC}"
     echo ""
 }
 
-# ----------------------------------------------------------------------------
+
+run_public_ip_check() {
+    echo ""
+    echo -e "${CYAN}${BOLD}[TEST 7] Public IP & Edge Check${NC}"
+    echo -e "  Action    : querying external edge via curl..."
+    echo ""
+    if command -v curl &>/dev/null; then
+        curl -s https://cloudflare.com/cdn-cgi/trace | grep -E "ip=|loc=|asn="
+    else
+        echo -e "${RED}[!] curl not found.${NC}"
+    fi
+    echo ""
+}
+
 
 print_summary() {
     echo ""
@@ -390,7 +426,7 @@ print_summary() {
     echo -e "${CYAN}${BOLD}                AUDIT SUMMARY${NC}"
     echo -e "${CYAN}${BOLD}================================================${NC}"
     echo ""
-    for TEST in "DNS Leak:VERDICT_DNS" "DoH Verify:VERDICT_DOH" \
+    for TEST in "DNS Leak (IPv4):VERDICT_DNS" "DoH Verify:VERDICT_DOH" \
                 "VPN Integrity:VERDICT_VPN" "Encrypted View:VERDICT_ENC" \
                 "Decrypted View:VERDICT_DEC"; do
         NAME="${TEST%%:*}"; VAR="${TEST##*:}"; STATUS="${!VAR}"
@@ -415,7 +451,6 @@ print_summary() {
     echo ""
 }
 
-# ----------------------------------------------------------------------------
 
 run_all() {
     PHYS=$(get_physical_interface)
@@ -425,14 +460,15 @@ run_all() {
     echo -e "${CYAN}${BOLD}[ALL TESTS] ${SEQUENTIAL_DURATION}s per test${NC}"
     echo "================================================"
     run_dns_leak "$SEQUENTIAL_DURATION"
+    run_ipv6_dns_leak "$SEQUENTIAL_DURATION"
     run_doh_check "$SEQUENTIAL_DURATION"
     run_vpn_integrity "$SEQUENTIAL_DURATION"
     run_encrypted_view "$SEQUENTIAL_DURATION"
     run_decrypted_view "$SEQUENTIAL_DURATION"
+    run_public_ip_check
     print_summary
 }
 
-# ----------------------------------------------------------------------------
 
 install_aliases() {
     local ZSHRC="$HOME/.zshrc"
@@ -447,11 +483,12 @@ install_aliases() {
 
 # ---- network_audit aliases -- github.com/HunterBFranklin/network-audit ----
 alias dns-leak='sudo tcpdump -i $PHYS -n udp port 53'
+alias ipv6-dns-leak='sudo tcpdump -i $PHYS -n ip6 and udp port 53'
 alias doh-check='sudo tcpdump -i $PHYS -n host $DOH_SERVER'
-alias vpn-integrity='sudo tcpdump -i $PHYS -n not udp port $WIREGUARD_PORT'
+alias vpn-integrity='sudo tcpdump -i $PHYS -n "not udp port $WIREGUARD_PORT and not port 5353 and not port 1900 and not broadcast"'
 alias wg-view='sudo tcpdump -i $PHYS -n -v udp port $WIREGUARD_PORT'
 alias tunnel-view='sudo tcpdump -i $TUNNEL -n -tttt'
-alias port-hunt='lsof -i'
+alias public-ip='curl -s https://cloudflare.com/cdn-cgi/trace | grep -E "ip=|loc=|asn="'
 # ---------------------------------------------------------------------------
 EOF
 
@@ -459,7 +496,6 @@ EOF
     echo -e "${YELLOW}    Run: source ~/.zshrc${NC}"
 }
 
-# ----------------------------------------------------------------------------
 
 PHYS=$(get_physical_interface)
 TUNNEL=$(get_tunnel_interface)
@@ -471,13 +507,15 @@ while true; do
     print_menu
     case $choice in
         1) run_dns_leak ;;
+        1b|1B) run_ipv6_dns_leak ;;
         2) run_doh_check ;;
         3) run_vpn_integrity ;;
         4) run_encrypted_view ;;
         5) run_decrypted_view ;;
         6) run_process_hunt ;;
-        7) run_all ;;
-        8) install_aliases ;;
+        7) run_public_ip_check ;;
+        8) run_all ;;
+        9) install_aliases ;;
         q|Q) echo "Exiting."; exit 0 ;;
         *) echo -e "${RED}[!] Invalid choice.${NC}" ;;
     esac

@@ -26,14 +26,16 @@ Each test produces a `[ PASS ]`, `[ FAIL ]`, `[ WARN ]`, or `[ INFO ]` verdict. 
  
 | # | Name | Interface | What It Checks |
 |---|------|-----------|----------------|
-| 1 | DNS Leak Check | Physical | Listens for UDP port 53 traffic. Any hits mean DNS queries are leaving unencrypted. |
-| 2 | DoH Verification | Physical | Confirms DNS is routing to Cloudflare `1.1.1.1` over HTTPS (port 443). A WARN here is expected if DoH routes inside the tunnel. |
-| 3 | VPN Integrity | Physical | Captures everything except WireGuard UDP traffic. Near-silence is the goal — any IP traffic is a potential tunnel bypass. |
-| 4 | Encrypted View | Physical | Shows raw WireGuard envelopes on the physical interface. Confirms the tunnel is active and carrying traffic. |
-| 5 | Decrypted View | Tunnel | Captures plaintext-visible traffic inside the tunnel. Real IPs and protocols are visible here; application-layer TLS is still encrypted. |
-| 6 | Process Hunt | Tunnel | Takes a port number, runs `lsof` and `netstat` to identify the owning process, then captures live tunnel traffic on that port. |
-| 7 | Run All | Both | Runs tests 1–5 sequentially (configurable duration, default 10s each) and prints a full summary. |
-| 8 | Install Aliases | — | Writes `dns-leak`, `doh-check`, `vpn-integrity`, `wg-view`, `tunnel-view`, and `port-hunt` shortcuts to `~/.zshrc`. |
+| 1 | DNS Leak Check (IPv4) | Physical | Listens for IPv4 UDP port 53 traffic. Any hits mean DNS queries are leaving unencrypted[cite: 2]. |
+| 1b | IPv6 DNS Check | Physical | Listens for IPv6 UDP port 53 traffic to catch unencrypted DNS escaping via IPv6 stacks. |
+| 2 | DoH Verification | Physical | Confirms DNS is routing to Cloudflare `1.1.1.1` over HTTPS (port 443). A WARN here is expected if DoH routes inside the tunnel[cite: 2]. |
+| 3 | VPN Integrity | Physical | Captures everything except WireGuard UDP traffic, filtering out local mDNS (`5353`), SSDP (`1900`), and broadcast noise[cite: 2]. |
+| 4 | Encrypted View | Physical | Shows raw WireGuard envelopes on the physical interface. Confirms the tunnel is active and carrying traffic[cite: 2]. |
+| 5 | Decrypted View | Tunnel | Captures plaintext-visible traffic inside the tunnel. Real IPs and protocols are visible here; application-layer TLS is still encrypted[cite: 2]. |
+| 6 | Process Hunt | Tunnel | Takes a port number, runs `lsof` and `netstat` to identify the owning process, then captures live tunnel traffic on that port[cite: 2]. |
+| 7 | Public IP Check | External | Queries Cloudflare's edge via `curl` to instantly print your external public IP, location code, and routing ASN. |
+| 8 | Run All | Both | Runs core tests sequentially (configurable duration, default 10s each) and prints a full summary[cite: 2]. |
+| 9 | Install Aliases | — | Writes shortcuts (`dns-leak`, `ipv6-dns-leak`, `doh-check`, `vpn-integrity`, `wg-view`, `tunnel-view`, `public-ip`) to `~/.zshrc`[cite: 2]. |
  
 ## Usage
  
@@ -42,13 +44,14 @@ chmod +x network_audit.sh
 sudo ./network_audit.sh
 ```
  
-You'll get an interactive menu. Select a test by number or run all with `7`. After installing aliases with `8`, run `source ~/.zshrc` once and then call any test directly:
+You'll get an interactive menu. Select a test by number or run all with `8`. After installing aliases with `9`, run `source ~/.zshrc` once and then call any test directly:
  
 ```bash
-dns-leak        # live UDP 53 monitor
-vpn-integrity   # live bypass check
-tunnel-view     # decrypted traffic inside tunnel
-port-hunt       # lsof -i shortcut
+dns-leak          # live IPv4 UDP 53 monitor
+ipv6-dns-leak     # live IPv6 UDP 53 monitor
+vpn-integrity     # live bypass check (noise-filtered)
+tunnel-view       # decrypted traffic inside tunnel
+public-ip         # check external edge IP/ASN via curl
 ```
  
 Configuration variables at the top of the script:
