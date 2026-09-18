@@ -309,17 +309,25 @@ run_doh_check() {
 
 
 run_vpn_integrity() {
-    local IFACE DURATION OUTFILE RESULT
+    local IFACE DURATION OUTFILE RESULT WG_ENDPOINT
     IFACE=$(get_physical_interface)
     DURATION="${1:-$SEQUENTIAL_DURATION}"
     OUTFILE=$(mktemp -t na_txt)
+    WIREGUARD_ENDPOINT=$(sudo wg show all endpoints 2>/dev/null | awk '{print $2}' | cut -d: -f1 | head -1)
+    local FILTER="not udp port $WIREGUARD_PORT and not port 5353 and not port 1900 and not broadcast"
+    if [[ -n "$WG_ENDPOINT" ]]; then
+        FILTER="$FILTER and not host $WG_ENDPOINT"
+    fi
     echo ""
     echo -e "${CYAN}${BOLD}[TEST 3] VPN Integrity${NC}"
     echo -e "  Interface : ${GREEN}$IFACE${NC} (physical)"
-    echo -e "  Filter    : not udp port $WIREGUARD_PORT (excluding mDNS/SSDP/broadcast)"
+    echo -e "  Filter    : $FILTER"
     echo -e "  Expect    : near silence -- all internet traffic inside WireGuard"
+    if [[ -n "$WG_ENDPOINT" ]]; then
+        echo -e "  WG Endpoint: ${GREEN}$WG_ENDPOINT${NC} (excluded from leak check)"
+    fi
     echo ""
-    timed_tcpdump "$OUTFILE" "$DURATION" -i "$IFACE" -n "not udp port $WIREGUARD_PORT and not port 5353 and not port 1900 and not broadcast"
+    timed_tcpdump "$OUTFILE" "$DURATION" -i "$IFACE" -n "$FILTER"
     RESULT=$(cat "$OUTFILE"); rm -f "$OUTFILE"
     echo "$RESULT"
     evaluate_vpn_integrity "$RESULT"
