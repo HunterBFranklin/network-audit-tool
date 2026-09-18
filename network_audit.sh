@@ -19,7 +19,7 @@
 # -----------------------------------------------------------------------------
 PHYSICAL_INTERFACE="en0"    # en0=WiFi, en1=Ethernet
 WIREGUARD_PORT="51820"      # NordLynx default
-DOH_SERVER="1.1.1.1"        # Cloudflare DoH
+DOH_SERVER="9.9.9.9"        # Quad9 DNS
 SEQUENTIAL_DURATION=10      # Seconds per test in Run All
 AUTO_DETECT_PHYSICAL=true
 AUTO_DETECT_TUNNEL=true
@@ -191,7 +191,7 @@ evaluate_doh() {
     else
         VERDICT_DOH="WARN"
         print_verdict "WARN" "Traffic to $DOH_SERVER but not on port 443." \
-            "Verify DoH is configured correctly."
+            "Verify DoH is configured correctly in NordVPN settings."
     fi
 }
 
